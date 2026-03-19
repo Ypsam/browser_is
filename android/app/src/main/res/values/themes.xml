@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.BrowserIs" parent="Theme.MaterialComponents.DayNight.NoActionBar">
+        <item name="colorPrimary">#7AA2FF</item>
+        <item name="colorPrimaryVariant">#4A6DD8</item>
+        <item name="colorOnPrimary">#0B0D12</item>
+        <item name="colorSecondary">#2DD4BF</item>
+        <item name="android:statusBarColor">#0B0D12</item>
+        <item name="android:navigationBarColor">#0B0D12</item>
+    </style>
+</resources>
+
