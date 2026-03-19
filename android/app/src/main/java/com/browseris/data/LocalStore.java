@@ -156,6 +156,14 @@ public class LocalStore {
         prefs.edit().putString("hide_ads_css", css == null ? "" : css).apply();
     }
 
+    public boolean getAutoSkipAdsEnabled() {
+        return prefs.getBoolean("auto_skip_ads_enabled", true);
+    }
+
+    public void setAutoSkipAdsEnabled(boolean enabled) {
+        prefs.edit().putBoolean("auto_skip_ads_enabled", enabled).apply();
+    }
+
     public String getLastUrl() {
         String raw = prefs.getString("last_url", "https://example.com");
         return raw == null ? "https://example.com" : raw;

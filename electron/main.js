@@ -19,6 +19,9 @@ const store = new Store({
       enabled: true,
       css: ''
     },
+    autoSkipAds: {
+      enabled: true
+    },
     privacy: {
       blockPopups: true,
       blockNotifications: true,
@@ -90,6 +93,14 @@ function setCosmetic(next) {
   store.set('cosmetic', next);
 }
 
+function getAutoSkipAds() {
+  return store.get('autoSkipAds') || { enabled: true };
+}
+
+function setAutoSkipAds(next) {
+  store.set('autoSkipAds', next);
+}
+
 function getPrivacy() {
   return (
     store.get('privacy') || {
@@ -128,6 +139,90 @@ function defaultCosmeticCss() {
 iframe[src*="ads" i],iframe[id*="ad" i],iframe[class*="ad" i],
 div[data-ad],section[data-ad],
 .adsbygoogle { display:none !important; }
+`;
+}
+
+function autoSkipAdsScript() {
+  // Runs in page context. Conservative: only clicks elements that look like skip/close ad.
+  // Avoids generic "continue/next" to reduce misclick.
+  return `
+(() => {
+  if (window.__browser_is_autoskip_installed) return;
+  window.__browser_is_autoskip_installed = true;
+
+  const CLICK_TEXT = [
+    '跳过', '跳過', '跳过广告', '跳過廣告',
+    'Skip', 'Skip Ad', 'Skip Ads',
+    '关闭', '關閉', '关闭广告', '關閉廣告',
+    'Close', 'Dismiss'
+  ];
+
+  const isVisible = (el) => {
+    if (!el) return false;
+    const r = el.getBoundingClientRect?.();
+    if (!r || r.width < 2 || r.height < 2) return false;
+    const s = getComputedStyle(el);
+    return s.visibility !== 'hidden' && s.display !== 'none' && s.opacity !== '0';
+  };
+
+  const textOf = (el) =>
+    (el.innerText || el.getAttribute?.('aria-label') || el.title || el.getAttribute?.('title') || '').trim();
+
+  const textMatches = (txt) => {
+    const t = (txt || '').toLowerCase();
+    return CLICK_TEXT.some((k) => t.includes(k.toLowerCase()));
+  };
+
+  const tryClick = (el) => {
+    if (!el || !isVisible(el)) return false;
+    const txt = textOf(el);
+    if (!txt || !textMatches(txt)) return false;
+    try { el.click(); return true; } catch { return false; }
+  };
+
+  const hardSelectors = [
+    '.ytp-ad-skip-button',
+    '.ytp-ad-skip-button-modern',
+    '[class*="skip" i][class*="ad" i]',
+    '[aria-label*="skip" i]',
+    '[class*="close" i][class*="ad" i]',
+    '[aria-label*="close" i]'
+  ];
+
+  const hideOverlays = () => {
+    const selectors = [
+      '[class*="ad" i][class*="overlay" i]',
+      '[class*="ad" i][class*="layer" i]',
+      '[class*="ad" i][class*="modal" i]',
+      '[id*="ad" i][id*="overlay" i]',
+      '[class*="countdown" i][class*="ad" i]',
+      '[id*="countdown" i][id*="ad" i]'
+    ];
+    document.querySelectorAll(selectors.join(',')).forEach((el) => {
+      if (isVisible(el)) el.style.setProperty('display', 'none', 'important');
+    });
+  };
+
+  const scan = () => {
+    // 1) known selectors first
+    for (const sel of hardSelectors) {
+      const nodes = document.querySelectorAll(sel);
+      for (const el of nodes) {
+        if (tryClick(el)) return;
+      }
+    }
+    // 2) fallback: scan common clickable elements
+    const nodes = document.querySelectorAll('button, [role="button"], a');
+    for (const el of nodes) {
+      if (tryClick(el)) return;
+    }
+    hideOverlays();
+  };
+
+  scan();
+  new MutationObserver(scan).observe(document.documentElement, { childList: true, subtree: true, attributes: true });
+  setInterval(scan, 900);
+})();
 `;
 }
 
@@ -272,6 +367,16 @@ function createWindow() {
     cosmeticKey = null;
   }
 
+  async function applyAutoSkipAdsOnce() {
+    const cfg = getAutoSkipAds();
+    if (!cfg.enabled) return;
+    try {
+      await view.webContents.executeJavaScript(autoSkipAdsScript(), true);
+    } catch {
+      // ignore
+    }
+  }
+
   function resizeView() {
     const [w, h] = win.getContentSize();
     // top toolbar+hint area in renderer is ~92px; keep some padding
@@ -343,6 +448,10 @@ function createWindow() {
 
   view.webContents.on('dom-ready', async () => {
     await applyCosmeticOnce();
+    // Enable only when ad filtering is on (network or cosmetic), to reduce surprises.
+    if (getAdblock().enabled || getCosmetic().enabled) {
+      await applyAutoSkipAdsOnce();
+    }
     await maybeRunScriptsFor('dom-ready');
   });
 
@@ -371,6 +480,7 @@ function createWindow() {
     permissions: getPermissions(),
     adblock: getAdblock(),
     cosmetic: getCosmetic(),
+    autoSkipAds: getAutoSkipAds(),
     privacy: getPrivacy()
   }));
 
@@ -441,6 +551,17 @@ function createWindow() {
     }
     win.webContents.send('cosmetic-changed', getCosmetic());
     return getCosmetic();
+  });
+
+  ipcMain.handle('setAutoSkipAdsEnabled', async (_evt, enabled) => {
+    const next = { ...getAutoSkipAds(), enabled: !!enabled };
+    setAutoSkipAds(next);
+    win.webContents.send('autoskip-changed', getAutoSkipAds());
+    // Apply immediately (best-effort).
+    if (next.enabled && (getAdblock().enabled || getCosmetic().enabled)) {
+      await applyAutoSkipAdsOnce();
+    }
+    return getAutoSkipAds();
   });
 
   ipcMain.handle('setPrivacy', async (_evt, patch) => {

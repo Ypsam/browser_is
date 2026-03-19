@@ -23,6 +23,7 @@ export default function App() {
   const [perm, setPerm] = useState({}); // host -> { alwaysAllow: boolean }
   const [adblock, setAdblock] = useState({ enabled: true });
   const [cosmetic, setCosmetic] = useState({ enabled: true, css: '' });
+  const [autoskip, setAutoskip] = useState({ enabled: true });
   const [privacy, setPrivacy] = useState({
     blockPopups: true,
     blockNotifications: true,
@@ -50,11 +51,12 @@ export default function App() {
     const api = window.browserIsApi;
     if (!api) return;
 
-    api.getState().then(({ lastUrl, scripts: s, permissions, privacy: p, cosmetic: c }) => {
+    api.getState().then(({ lastUrl, scripts: s, permissions, privacy: p, cosmetic: c, autoSkipAds: a }) => {
       setScripts(s);
       setPerm(permissions);
       if (p) setPrivacy(p);
       if (c) setCosmetic(c);
+      if (a) setAutoskip(a);
       if (lastUrl) {
         setCurrentUrl(lastUrl);
         setUrlInput(lastUrl);
@@ -68,6 +70,7 @@ export default function App() {
     const off2 = api.onPermissionsChanged((p) => setPerm(p));
     const off2b = api.onAdblockChanged((a) => setAdblock(a));
     const off2bb = api.onCosmeticChanged((c) => setCosmetic(c));
+    const off2bbb = api.onAutoSkipAdsChanged((a) => setAutoskip(a));
     const off2c = api.onPrivacyChanged((p) => setPrivacy(p));
     const off3 = api.onScriptRunRequest(({ requestId, url, host: h, matchedScripts }) => {
       setPending({ requestId, url, host: h, matchedScripts });
@@ -80,6 +83,7 @@ export default function App() {
       off2?.();
       off2b?.();
       off2bb?.();
+      off2bbb?.();
       off2c?.();
       off3?.();
       off4?.();
@@ -329,6 +333,19 @@ export default function App() {
                   {label}
                 </label>
               ))}
+
+              <label className="toggle" style={{ display: 'flex', padding: '8px 0' }}>
+                <input
+                  type="checkbox"
+                  checked={!!autoskip?.enabled}
+                  onChange={async (e) => {
+                    const next = { enabled: e.target.checked };
+                    setAutoskip(next);
+                    await window.browserIsApi?.setAutoSkipAdsEnabled(next.enabled);
+                  }}
+                />
+                自动点击“跳过广告/关闭广告”（仅在 AdBlock/HideAds 开启时生效）
+              </label>
 
               <div style={{ height: 12 }} />
               <div className="field">

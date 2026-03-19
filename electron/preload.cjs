@@ -16,6 +16,7 @@ contextBridge.exposeInMainWorld('browserIsApi', {
   setScriptEnabled: (id, enabled) => ipcRenderer.invoke('setScriptEnabled', { id, enabled }),
   setAdblockEnabled: (enabled) => ipcRenderer.invoke('setAdblockEnabled', enabled),
   setCosmetic: (patch) => ipcRenderer.invoke('setCosmetic', patch),
+  setAutoSkipAdsEnabled: (enabled) => ipcRenderer.invoke('setAutoSkipAdsEnabled', enabled),
   setPrivacy: (patch) => ipcRenderer.invoke('setPrivacy', patch),
 
   sendScriptRunDecision: ({ requestId, allow, always }) => {
@@ -38,6 +39,10 @@ contextBridge.exposeInMainWorld('browserIsApi', {
   onCosmeticChanged: (cb) =>
     on('cosmetic-changed', (_evt, cosmetic) => {
       cb?.(cosmetic);
+    }),
+  onAutoSkipAdsChanged: (cb) =>
+    on('autoskip-changed', (_evt, autoskip) => {
+      cb?.(autoskip);
     }),
   onPrivacyChanged: (cb) =>
     on('privacy-changed', (_evt, privacy) => {

@@ -203,6 +203,10 @@ public class MainActivity extends AppCompatActivity {
         if ("dom-ready".equals(runAt) && store.getHideAdsEnabled()) {
             injectHideAdsCss();
         }
+        // Auto skip ad countdown/skip buttons when ad filtering is enabled.
+        if ("dom-ready".equals(runAt) && store.getAutoSkipAdsEnabled() && (store.getAdblockEnabled() || store.getHideAdsEnabled())) {
+            injectAutoSkipAds();
+        }
 
         if (matched.isEmpty()) return;
         if (store.getAlwaysAllow(host)) {
@@ -250,6 +254,28 @@ public class MainActivity extends AppCompatActivity {
                 "var el=document.getElementById(id);" +
                 "if(!el){el=document.createElement('style');el.id=id;document.documentElement.appendChild(el);}"+
                 "el.textContent=css;}catch(e){}})();";
+        web.evaluateJavascript(js, null);
+    }
+
+    private void injectAutoSkipAds() {
+        String js = "(function(){try{" +
+                "if(window.__browser_is_autoskip_installed)return;window.__browser_is_autoskip_installed=true;" +
+                "var KEY=['跳过','跳過','跳过广告','跳過廣告','Skip','Skip Ad','Skip Ads','关闭','關閉','关闭广告','關閉廣告','Close','Dismiss'];" +
+                "function vis(el){if(!el||!el.getBoundingClientRect)return false;var r=el.getBoundingClientRect();if(r.width<2||r.height<2)return false;" +
+                "var s=getComputedStyle(el);return s.display!=='none'&&s.visibility!=='hidden'&&s.opacity!=='0';}" +
+                "function txt(el){return ((el.innerText||el.getAttribute('aria-label')||el.title||el.getAttribute('title')||'')+'').trim();}" +
+                "function match(t){t=(t||'').toLowerCase();for(var i=0;i<KEY.length;i++){if(t.indexOf(KEY[i].toLowerCase())>=0)return true;}return false;}" +
+                "function tryClick(el){if(!vis(el))return false;var t=txt(el);if(!t||!match(t))return false;try{el.click();return true;}catch(e){return false;}}" +
+                "var hard=['.ytp-ad-skip-button','.ytp-ad-skip-button-modern','[class*=\"skip\" i][class*=\"ad\" i]','[aria-label*=\"skip\" i]','[class*=\"close\" i][class*=\"ad\" i]','[aria-label*=\"close\" i]'];" +
+                "function hide(){var sel=['[class*=\"ad\" i][class*=\"overlay\" i]','[class*=\"ad\" i][class*=\"layer\" i]','[class*=\"ad\" i][class*=\"modal\" i]','[id*=\"ad\" i][id*=\"overlay\" i]','[class*=\"countdown\" i][class*=\"ad\" i]','[id*=\"countdown\" i][id*=\"ad\" i]'];" +
+                "document.querySelectorAll(sel.join(',')).forEach(function(el){if(vis(el))el.style.setProperty('display','none','important');});}" +
+                "function scan(){" +
+                "for(var i=0;i<hard.length;i++){document.querySelectorAll(hard[i]).forEach(function(el){tryClick(el);});}" +
+                "document.querySelectorAll('button,[role=\"button\"],a').forEach(function(el){tryClick(el);});" +
+                "hide();" +
+                "}" +
+                "scan();new MutationObserver(scan).observe(document.documentElement,{childList:true,subtree:true,attributes:true});setInterval(scan,900);" +
+                "}catch(e){}})();";
         web.evaluateJavascript(js, null);
     }
 
@@ -313,6 +339,10 @@ public class MainActivity extends AppCompatActivity {
         cbHide.setText("隐藏广告元素（CSS 注入，去掉整块广告位）");
         cbHide.setChecked(store.getHideAdsEnabled());
 
+        CheckBox cbAuto = new CheckBox(this);
+        cbAuto.setText("自动跳过广告（点“跳过/关闭/倒计时层”）");
+        cbAuto.setChecked(store.getAutoSkipAdsEnabled());
+
         EditText etCss = new EditText(this);
         etCss.setHint("自定义隐藏 CSS（可选）\n例如：#banner-ad{display:none!important;}");
         etCss.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_MULTI_LINE);
@@ -329,6 +359,7 @@ public class MainActivity extends AppCompatActivity {
         root.addView(cbHijack);
         root.addView(cb3p);
         root.addView(cbHide);
+        root.addView(cbAuto);
         root.addView(etCss);
         root.addView(et);
 
@@ -341,6 +372,7 @@ public class MainActivity extends AppCompatActivity {
                     store.setAntiHijackEnabled(cbHijack.isChecked());
                     store.setBlockThirdPartyCookiesEnabled(cb3p.isChecked());
                     store.setHideAdsEnabled(cbHide.isChecked());
+                    store.setAutoSkipAdsEnabled(cbAuto.isChecked());
                     store.setHideAdsCss(etCss.getText() == null ? "" : etCss.getText().toString());
                     store.setAdblockHostsRaw(et.getText() == null ? "" : et.getText().toString());
                     CookieManager.getInstance().setAcceptThirdPartyCookies(web, !store.getBlockThirdPartyCookiesEnabled());
