@@ -301,18 +301,12 @@ function videoAdSkipScript() {
     '.ad-showing .ytp-ad-skip-button-modern'
   ];
 
-  const VIDEO_AD_OVERLAY_SELECTORS = [
-    '.ytp-ad-overlay-container',
-    '.ytp-ad-overlay-close-button',
-    '.ytp-ad-skip-overlay',
+  // 仅最小化 banner 类覆盖层，不隐藏主播放容器，避免破坏播放
+  const MINIMIZE_OVERLAY_SELECTORS = [
     '.ytp-ad-text-overlay',
     '.ytp-ad-image-overlay',
-    '[class*="ytp-ad" i][class*="overlay" i]',
-    '.ad-showing .ytp-ad-player-overlay',
-    '.vjs-ad-overlay',
-    '[class*="ad" i][class*="overlay" i][class*="video" i]',
-    '.ad-container',
-    '.video-ads'
+    '.ytp-ad-overlay-container',
+    '.vjs-ad-overlay'
   ];
 
   const isVisible = (el) => {
@@ -340,18 +334,22 @@ function videoAdSkipScript() {
     return false;
   };
 
-  const hideVideoAdOverlays = () => {
-    for (const sel of VIDEO_AD_OVERLAY_SELECTORS) {
+  const minimizeOverlays = () => {
+    for (const sel of MINIMIZE_OVERLAY_SELECTORS) {
       try {
         document.querySelectorAll(sel).forEach((el) => {
-          if (isVisible(el)) el.style.setProperty('display', 'none', 'important');
+          if (isVisible(el)) {
+            el.style.setProperty('opacity', '0.02', 'important');
+            el.style.setProperty('pointer-events', 'none', 'important');
+          }
         });
       } catch {}
     }
   };
 
   const run = () => {
-    if (!skipVideoAds()) hideVideoAdOverlays();
+    skipVideoAds();
+    minimizeOverlays();
   };
 
   run();
