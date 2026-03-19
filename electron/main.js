@@ -17,10 +17,10 @@ const store = new Store({
     scripts: [],
     permissions: {}, // host -> { alwaysAllow: boolean }
     adblock: {
-      enabled: true
+      enabled: false  // 默认关，避免 ERR_BLOCKED_BY_CLIENT；用 HideAds 隐藏广告
     },
     cosmetic: {
-      enabled: true,
+      enabled: false,
       css: ''
     },
     autoSkipAds: {
@@ -111,7 +111,7 @@ function setAdblock(next) {
 }
 
 function getCosmetic() {
-  return store.get('cosmetic') || { enabled: true, css: '' };
+  return store.get('cosmetic') || { enabled: false, css: '' };
 }
 
 function setCosmetic(next) {
@@ -380,14 +380,12 @@ function createWindow() {
   });
 
   // Adblock (network level). MVP: global blocker + per-app enabled flag.
+  // 仅用 EasyList，避免 EasyPrivacy/Fanboy 拦截关键脚本导致 ERR_BLOCKED_BY_CLIENT
   let blocker = null;
   (async () => {
     try {
       blocker = await ElectronBlocker.fromLists(fetch, [
-        // EasyList + privacy + annoyance
-        'https://easylist.to/easylist/easylist.txt',
-        'https://easylist.to/easylist/easyprivacy.txt',
-        'https://easylist.to/easylist/fanboy-annoyance.txt'
+        'https://easylist.to/easylist/easylist.txt'
       ]);
       if (getAdblock().enabled) blocker.enableBlockingInSession(view.webContents.session);
     } catch {
