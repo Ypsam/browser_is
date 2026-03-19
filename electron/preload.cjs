@@ -9,6 +9,10 @@ contextBridge.exposeInMainWorld('browserIsApi', {
   navigate: (url) => ipcRenderer.invoke('navigate', url),
   goBack: () => ipcRenderer.invoke('goBack'),
   reload: () => ipcRenderer.invoke('reload'),
+  setBrowserViewHidden: (hidden) => ipcRenderer.invoke('setBrowserViewHidden', hidden),
+  addTab: () => ipcRenderer.invoke('addTab'),
+  removeTab: (tabId) => ipcRenderer.invoke('removeTab', tabId),
+  setActiveTab: (tabId) => ipcRenderer.invoke('setActiveTab', tabId),
 
   getState: () => ipcRenderer.invoke('getState'),
   upsertScript: (script) => ipcRenderer.invoke('upsertScript', script),
@@ -17,6 +21,7 @@ contextBridge.exposeInMainWorld('browserIsApi', {
   setAdblockEnabled: (enabled) => ipcRenderer.invoke('setAdblockEnabled', enabled),
   setCosmetic: (patch) => ipcRenderer.invoke('setCosmetic', patch),
   setAutoSkipAdsEnabled: (enabled) => ipcRenderer.invoke('setAutoSkipAdsEnabled', enabled),
+  setProxy: (patch) => ipcRenderer.invoke('setProxy', patch),
   setPrivacy: (patch) => ipcRenderer.invoke('setPrivacy', patch),
 
   sendScriptRunDecision: ({ requestId, allow, always }) => {
@@ -44,9 +49,18 @@ contextBridge.exposeInMainWorld('browserIsApi', {
     on('autoskip-changed', (_evt, autoskip) => {
       cb?.(autoskip);
     }),
+  onProxyChanged: (cb) =>
+    on('proxy-changed', (_evt, proxy) => {
+      cb?.(proxy);
+    }),
   onPrivacyChanged: (cb) =>
     on('privacy-changed', (_evt, privacy) => {
       cb?.(privacy);
+    }),
+
+  onTabsChanged: (cb) =>
+    on('tabs-changed', (_evt, payload) => {
+      cb?.(payload);
     }),
 
   onNavigation: (cb) =>

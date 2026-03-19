@@ -164,6 +164,23 @@ public class LocalStore {
         prefs.edit().putBoolean("auto_skip_ads_enabled", enabled).apply();
     }
 
+    public boolean getProxyEnabled() {
+        return prefs.getBoolean("proxy_enabled", false);
+    }
+
+    public void setProxyEnabled(boolean enabled) {
+        prefs.edit().putBoolean("proxy_enabled", enabled).apply();
+    }
+
+    public String getProxyUrl() {
+        String raw = prefs.getString("proxy_url", "");
+        return raw == null ? "" : raw;
+    }
+
+    public void setProxyUrl(String url) {
+        prefs.edit().putString("proxy_url", url == null ? "" : url).apply();
+    }
+
     public String getLastUrl() {
         String raw = prefs.getString("last_url", "https://example.com");
         return raw == null ? "https://example.com" : raw;

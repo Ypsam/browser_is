@@ -28,18 +28,90 @@ body {
 
 .app {
   display: grid;
-  grid-template-rows: auto 1fr;
+  grid-template-rows: auto auto 1fr;
   height: 100vh;
 }
 
 .toolbar {
   display: grid;
-  grid-template-columns: auto 1fr auto auto;
-  gap: 10px;
+  grid-template-columns: auto 1fr auto auto auto auto auto auto;
+  gap: 8px;
   align-items: center;
-  padding: 10px 12px;
+  padding: 8px 12px;
   background: linear-gradient(180deg, var(--panel), var(--panel2));
   border-bottom: 1px solid var(--border);
+}
+
+.tabbar {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 4px 8px;
+  background: var(--panel2);
+  border-bottom: 1px solid var(--border);
+  min-height: 32px;
+  overflow-x: auto;
+}
+
+.tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  border-radius: 8px;
+  cursor: pointer;
+  max-width: 180px;
+  min-width: 60px;
+  border: 1px solid transparent;
+  flex-shrink: 0;
+}
+
+.tab:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.tab.active {
+  background: rgba(122, 162, 255, 0.15);
+  border-color: rgba(122, 162, 255, 0.4);
+}
+
+.tabLabel {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+}
+
+.tabClose {
+  padding: 0 4px;
+  font-size: 14px;
+  line-height: 1;
+  background: none;
+  border: none;
+  color: var(--muted);
+  cursor: pointer;
+  border-radius: 4px;
+}
+
+.tabClose:hover {
+  color: var(--danger);
+  background: rgba(255, 93, 93, 0.15);
+}
+
+.tabAdd {
+  padding: 4px 10px;
+  font-size: 18px;
+  line-height: 1;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--border);
+  color: var(--text);
+  cursor: pointer;
+  border-radius: 8px;
+  flex-shrink: 0;
+}
+
+.tabAdd:hover {
+  border-color: rgba(122, 162, 255, 0.5);
 }
 
 .btn {

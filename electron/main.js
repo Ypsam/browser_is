@@ -6,10 +6,14 @@ import { ElectronBlocker } from '@cliqz/adblocker-electron';
 
 const isDev = !app.isPackaged;
 
+const DEFAULT_HOME = 'https://example.com';
+
 const store = new Store({
   name: 'browser_is',
   defaults: {
-    lastUrl: 'https://example.com',
+    lastUrl: DEFAULT_HOME,
+    tabs: [{ id: '1', url: DEFAULT_HOME, title: 'New Tab' }],
+    activeTabId: '1',
     scripts: [],
     permissions: {}, // host -> { alwaysAllow: boolean }
     adblock: {
@@ -21,6 +25,10 @@ const store = new Store({
     },
     autoSkipAds: {
       enabled: true
+    },
+    proxy: {
+      enabled: false,
+      url: '' // e.g. socks5://127.0.0.1:1080 or http://proxy:8080
     },
     privacy: {
       blockPopups: true,
@@ -59,6 +67,23 @@ function getHost(url) {
   } catch {
     return '';
   }
+}
+
+function getTabs() {
+  const t = store.get('tabs');
+  return Array.isArray(t) && t.length > 0 ? t : [{ id: '1', url: DEFAULT_HOME, title: 'New Tab' }];
+}
+
+function setTabs(next) {
+  store.set('tabs', next);
+}
+
+function getActiveTabId() {
+  return store.get('activeTabId') || (getTabs()[0]?.id ?? '1');
+}
+
+function setActiveTabId(id) {
+  store.set('activeTabId', id);
 }
 
 function getScripts() {
@@ -115,6 +140,29 @@ function getPrivacy() {
 
 function setPrivacy(next) {
   store.set('privacy', next);
+}
+
+function getProxy() {
+  return store.get('proxy') || { enabled: false, url: '' };
+}
+
+function setProxy(next) {
+  store.set('proxy', next);
+}
+
+function applyProxy(session) {
+  const cfg = getProxy();
+  if (!session) return;
+  try {
+    if (cfg.enabled && cfg.url && String(cfg.url).trim()) {
+      const rules = String(cfg.url).trim();
+      session.setProxy({ proxyRules: rules, proxyBypassRules: 'localhost,127.0.0.1' });
+    } else {
+      session.setProxy({ proxyRules: '' });
+    }
+  } catch {
+    // ignore
+  }
 }
 
 function pickMatchedScripts(url, runAt) {
@@ -257,6 +305,10 @@ function createWindow() {
   });
   win.setBrowserView(view);
 
+  // Proxy (VPN): route browser traffic through HTTP/SOCKS5 proxy if configured.
+  const session = view.webContents.session;
+  applyProxy(session);
+
   // Anti-hijack: block popups & suspicious schemes by default.
   win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
   view.webContents.setWindowOpenHandler(({ url }) => {
@@ -273,7 +325,6 @@ function createWindow() {
   });
 
   // Anti-trace: permissions + cookies + headers hardening.
-  const session = view.webContents.session;
 
   session.setPermissionRequestHandler((_wc, permission, callback) => {
     const privacy = getPrivacy();
@@ -377,14 +428,26 @@ function createWindow() {
     }
   }
 
+  let browserViewHidden = false;
+  const TOOLBAR_H = 56;
+  const TABBAR_H = 36;
+  const TOP_H = TOOLBAR_H + TABBAR_H;
+  let lastBounds = { x: 0, y: TOP_H, width: 1200, height: 724 };
+
   function resizeView() {
     const [w, h] = win.getContentSize();
-    // top toolbar+hint area in renderer is ~92px; keep some padding
-    view.setBounds({ x: 0, y: 96, width: w, height: h - 96 });
+    lastBounds = { x: 0, y: TOP_H, width: w, height: Math.max(0, h - TOP_H) };
+    if (!browserViewHidden) view.setBounds(lastBounds);
   }
 
   resizeView();
   win.on('resize', resizeView);
+
+  function setBrowserViewHidden(hidden) {
+    browserViewHidden = !!hidden;
+    if (browserViewHidden) view.setBounds({ x: 0, y: 0, width: 0, height: 0 });
+    else view.setBounds(lastBounds);
+  }
 
   const pendingRequests = new Map(); // requestId -> resolve
 
@@ -441,9 +504,32 @@ function createWindow() {
     }
   }
 
+  function emitTabs() {
+    win.webContents.send('tabs-changed', { tabs: getTabs(), activeTabId: getActiveTabId() });
+  }
+
+  function updateActiveTabUrl(url) {
+    const id = getActiveTabId();
+    const tabs = getTabs().map((t) => (t.id === id ? { ...t, url: url || t.url } : t));
+    setTabs(tabs);
+    if (url) store.set('lastUrl', url);
+    emitTabs();
+  }
+
+  function updateActiveTabTitle(title) {
+    const id = getActiveTabId();
+    const tabs = getTabs().map((t) => (t.id === id ? { ...t, title: title || t.title } : t));
+    setTabs(tabs);
+    emitTabs();
+  }
+
   view.webContents.on('did-start-navigation', (_e, url, _isInPlace, isMainFrame) => {
-    if (isMainFrame && url) store.set('lastUrl', url);
+    if (isMainFrame && url) updateActiveTabUrl(url);
     win.webContents.send('navigation', { url });
+  });
+
+  view.webContents.on('page-title-updated', (_e, title) => {
+    updateActiveTabTitle(title);
   });
 
   view.webContents.on('dom-ready', async () => {
@@ -459,7 +545,46 @@ function createWindow() {
     await maybeRunScriptsFor('did-finish-load');
   });
 
-  view.webContents.loadURL(store.get('lastUrl') || 'https://example.com');
+  const initialTabs = getTabs();
+  const initialActiveId = getActiveTabId();
+  const initialTab = initialTabs.find((t) => t.id === initialActiveId) || initialTabs[0];
+  view.webContents.loadURL(initialTab?.url || DEFAULT_HOME);
+
+  ipcMain.handle('addTab', async () => {
+    const tabs = getTabs();
+    const id = simpleId();
+    const newTab = { id, url: DEFAULT_HOME, title: 'New Tab' };
+    setTabs([...tabs, newTab]);
+    setActiveTabId(id);
+    await view.webContents.loadURL(newTab.url);
+    emitTabs();
+    return { tabs: getTabs(), activeTabId: id };
+  });
+
+  ipcMain.handle('removeTab', async (_evt, tabId) => {
+    let tabs = getTabs();
+    if (tabs.length <= 1) return { tabs: getTabs(), activeTabId: getActiveTabId() };
+    const wasActive = getActiveTabId() === tabId;
+    tabs = tabs.filter((t) => t.id !== tabId);
+    setTabs(tabs);
+    if (wasActive) {
+      const idx = Math.min(tabs.length - 1, 1);
+      const next = tabs[idx] || tabs[0];
+      setActiveTabId(next.id);
+      await view.webContents.loadURL(next.url);
+    }
+    emitTabs();
+    return { tabs: getTabs(), activeTabId: getActiveTabId() };
+  });
+
+  ipcMain.handle('setActiveTab', async (_evt, tabId) => {
+    const tab = getTabs().find((t) => t.id === tabId);
+    if (!tab) return { tabs: getTabs(), activeTabId: getActiveTabId() };
+    setActiveTabId(tabId);
+    await view.webContents.loadURL(tab.url);
+    emitTabs();
+    return { tabs: getTabs(), activeTabId: tabId };
+  });
 
   ipcMain.handle('navigate', async (_evt, url) => {
     await view.webContents.loadURL(url);
@@ -475,12 +600,15 @@ function createWindow() {
   });
 
   ipcMain.handle('getState', () => ({
-    lastUrl: store.get('lastUrl') || 'https://example.com',
+    lastUrl: store.get('lastUrl') || DEFAULT_HOME,
+    tabs: getTabs(),
+    activeTabId: getActiveTabId(),
     scripts: getScripts(),
     permissions: getPermissions(),
     adblock: getAdblock(),
     cosmetic: getCosmetic(),
     autoSkipAds: getAutoSkipAds(),
+    proxy: getProxy(),
     privacy: getPrivacy()
   }));
 
@@ -562,6 +690,20 @@ function createWindow() {
       await applyAutoSkipAdsOnce();
     }
     return getAutoSkipAds();
+  });
+
+  ipcMain.handle('setBrowserViewHidden', (_evt, hidden) => {
+    setBrowserViewHidden(hidden);
+    return true;
+  });
+
+  ipcMain.handle('setProxy', async (_evt, patch) => {
+    const current = getProxy();
+    const next = { ...current, ...(patch || {}) };
+    setProxy(next);
+    applyProxy(view.webContents.session);
+    win.webContents.send('proxy-changed', getProxy());
+    return getProxy();
   });
 
   ipcMain.handle('setPrivacy', async (_evt, patch) => {

@@ -19,11 +19,14 @@ function hostFromUrl(url) {
 export default function App() {
   const [urlInput, setUrlInput] = useState('https://example.com');
   const [currentUrl, setCurrentUrl] = useState('https://example.com');
+  const [tabs, setTabs] = useState([]);
+  const [activeTabId, setActiveTabId] = useState('');
   const [scripts, setScripts] = useState([]);
   const [perm, setPerm] = useState({}); // host -> { alwaysAllow: boolean }
   const [adblock, setAdblock] = useState({ enabled: true });
   const [cosmetic, setCosmetic] = useState({ enabled: true, css: '' });
   const [autoskip, setAutoskip] = useState({ enabled: true });
+  const [proxy, setProxyState] = useState({ enabled: false, url: '' });
   const [privacy, setPrivacy] = useState({
     blockPopups: true,
     blockNotifications: true,
@@ -47,20 +50,36 @@ export default function App() {
 
   const host = useMemo(() => hostFromUrl(currentUrl), [currentUrl]);
 
+  const anyModalOpen = scriptModalOpen || privacyOpen || !!pending;
+
+  useEffect(() => {
+    window.browserIsApi?.setBrowserViewHidden(anyModalOpen);
+    return () => {
+      window.browserIsApi?.setBrowserViewHidden(false);
+    };
+  }, [anyModalOpen]);
+
   useEffect(() => {
     const api = window.browserIsApi;
     if (!api) return;
 
-    api.getState().then(({ lastUrl, scripts: s, permissions, privacy: p, cosmetic: c, autoSkipAds: a }) => {
+    api.getState().then(({ lastUrl, tabs: t, activeTabId: aid, scripts: s, permissions, privacy: p, cosmetic: c, autoSkipAds: a, proxy: px }) => {
+      if (t?.length) setTabs(t);
+      if (aid) setActiveTabId(aid);
       setScripts(s);
       setPerm(permissions);
       if (p) setPrivacy(p);
       if (c) setCosmetic(c);
       if (a) setAutoskip(a);
+      if (px) setProxyState(px);
       if (lastUrl) {
         setCurrentUrl(lastUrl);
         setUrlInput(lastUrl);
       }
+    });
+    const offTabs = api.onTabsChanged?.(({ tabs: t, activeTabId: aid }) => {
+      if (t?.length) setTabs(t);
+      if (aid) setActiveTabId(aid);
     });
     api.getState().then(({ adblock: a }) => {
       if (a) setAdblock(a);
@@ -71,6 +90,7 @@ export default function App() {
     const off2b = api.onAdblockChanged((a) => setAdblock(a));
     const off2bb = api.onCosmeticChanged((c) => setCosmetic(c));
     const off2bbb = api.onAutoSkipAdsChanged((a) => setAutoskip(a));
+    const off2px = api.onProxyChanged((px) => setProxyState(px));
     const off2c = api.onPrivacyChanged((p) => setPrivacy(p));
     const off3 = api.onScriptRunRequest(({ requestId, url, host: h, matchedScripts }) => {
       setPending({ requestId, url, host: h, matchedScripts });
@@ -79,11 +99,13 @@ export default function App() {
     const off4b = api.onNavigation(({ url }) => setUrlInput(url));
 
     return () => {
+      offTabs?.();
       off1?.();
       off2?.();
       off2b?.();
       off2bb?.();
       off2bbb?.();
+      off2px?.();
       off2c?.();
       off3?.();
       off4?.();
@@ -165,8 +187,41 @@ export default function App() {
         <button className="btn" onClick={() => setScriptModalOpen(true)}>
           脚本
         </button>
-        <button className="btn" onClick={() => setPrivacyOpen(true)}>
-          隐私
+        <button
+          className={`btn ${proxy?.enabled ? 'primary' : ''}`}
+          onClick={() => setPrivacyOpen(true)}
+          title="隐私 / 代理(VPN)"
+        >
+          {proxy?.enabled ? '代理开' : '隐私'}
+        </button>
+      </div>
+
+      <div className="tabbar">
+        {tabs.map((tab) => (
+          <div
+            key={tab.id}
+            className={`tab ${tab.id === activeTabId ? 'active' : ''}`}
+            onClick={() => window.browserIsApi?.setActiveTab(tab.id)}
+          >
+            <span className="tabLabel" title={tab.url}>
+              {tab.title && tab.title !== 'New Tab' ? tab.title : (tab.url || 'New Tab').replace(/^https?:\/\//, '').slice(0, 20)}
+              {(tab.url || '').length > 20 ? '…' : ''}
+            </span>
+            <button
+              type="button"
+              className="tabClose"
+              title="关闭"
+              onClick={(e) => {
+                e.stopPropagation();
+                window.browserIsApi?.removeTab(tab.id);
+              }}
+            >
+              ×
+            </button>
+          </div>
+        ))}
+        <button type="button" className="tabAdd" onClick={() => window.browserIsApi?.addTab()} title="新标签页">
+          +
         </button>
       </div>
 
@@ -313,6 +368,36 @@ export default function App() {
 
               <div style={{ height: 12 }} />
 
+              <div style={{ fontWeight: 700, marginBottom: 6 }}>代理 / VPN</div>
+              <label className="toggle" style={{ display: 'flex', padding: '8px 0' }}>
+                <input
+                  type="checkbox"
+                  checked={!!proxy?.enabled}
+                  onChange={async (e) => {
+                    const next = { ...proxy, enabled: e.target.checked };
+                    setProxyState(next);
+                    await window.browserIsApi?.setProxy({ enabled: next.enabled });
+                  }}
+                />
+                使用代理（浏览器流量走代理，如本机 VPN 的本地代理）
+              </label>
+              <div className="field" style={{ marginTop: 6 }}>
+                <label>代理地址</label>
+                <input
+                  value={proxy?.url || ''}
+                  onChange={(e) => setProxyState({ ...proxy, url: e.target.value })}
+                  onBlur={async () => {
+                    await window.browserIsApi?.setProxy({ url: proxy?.url || '' });
+                  }}
+                  placeholder="socks5://127.0.0.1:1080 或 http://代理:端口"
+                  spellCheck={false}
+                />
+              </div>
+              <div className="small" style={{ marginBottom: 10 }}>
+                本机 VPN 客户端若提供本地 HTTP/SOCKS5 代理，填此处即可让本浏览器流量走 VPN。
+              </div>
+
+              <div style={{ height: 8 }} />
               {[
                 ['blockPopups', '阻止弹窗/新窗口（反劫持）'],
                 ['blockNotifications', '阻止通知权限（反追踪）'],

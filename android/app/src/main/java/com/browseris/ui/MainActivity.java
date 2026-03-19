@@ -343,6 +343,16 @@ public class MainActivity extends AppCompatActivity {
         cbAuto.setText("自动跳过广告（点“跳过/关闭/倒计时层”）");
         cbAuto.setChecked(store.getAutoSkipAdsEnabled());
 
+        CheckBox cbProxy = new CheckBox(this);
+        cbProxy.setText("使用代理/VPN（仅保存设置；Android 上请用系统 VPN）");
+        cbProxy.setChecked(store.getProxyEnabled());
+
+        EditText etProxy = new EditText(this);
+        etProxy.setHint("代理地址 如 socks5://127.0.0.1:1080（本机 VPN 代理）");
+        etProxy.setSingleLine(true);
+        etProxy.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_URI);
+        etProxy.setText(store.getProxyUrl());
+
         EditText etCss = new EditText(this);
         etCss.setHint("自定义隐藏 CSS（可选）\n例如：#banner-ad{display:none!important;}");
         etCss.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_MULTI_LINE);
@@ -360,6 +370,8 @@ public class MainActivity extends AppCompatActivity {
         root.addView(cb3p);
         root.addView(cbHide);
         root.addView(cbAuto);
+        root.addView(cbProxy);
+        root.addView(etProxy);
         root.addView(etCss);
         root.addView(et);
 
@@ -373,6 +385,8 @@ public class MainActivity extends AppCompatActivity {
                     store.setBlockThirdPartyCookiesEnabled(cb3p.isChecked());
                     store.setHideAdsEnabled(cbHide.isChecked());
                     store.setAutoSkipAdsEnabled(cbAuto.isChecked());
+                    store.setProxyEnabled(cbProxy.isChecked());
+                    store.setProxyUrl(etProxy.getText() == null ? "" : etProxy.getText().toString());
                     store.setHideAdsCss(etCss.getText() == null ? "" : etCss.getText().toString());
                     store.setAdblockHostsRaw(et.getText() == null ? "" : et.getText().toString());
                     CookieManager.getInstance().setAcceptThirdPartyCookies(web, !store.getBlockThirdPartyCookiesEnabled());
