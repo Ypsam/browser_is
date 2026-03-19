@@ -21,6 +21,7 @@ contextBridge.exposeInMainWorld('browserIsApi', {
   setAdblockEnabled: (enabled) => ipcRenderer.invoke('setAdblockEnabled', enabled),
   setCosmetic: (patch) => ipcRenderer.invoke('setCosmetic', patch),
   setAutoSkipAdsEnabled: (enabled) => ipcRenderer.invoke('setAutoSkipAdsEnabled', enabled),
+  setVideoAdSkipEnabled: (enabled) => ipcRenderer.invoke('setVideoAdSkipEnabled', enabled),
   setProxy: (patch) => ipcRenderer.invoke('setProxy', patch),
   setPrivacy: (patch) => ipcRenderer.invoke('setPrivacy', patch),
 
@@ -48,6 +49,10 @@ contextBridge.exposeInMainWorld('browserIsApi', {
   onAutoSkipAdsChanged: (cb) =>
     on('autoskip-changed', (_evt, autoskip) => {
       cb?.(autoskip);
+    }),
+  onVideoAdSkipChanged: (cb) =>
+    on('video-ad-skip-changed', (_evt, videoAdSkip) => {
+      cb?.(videoAdSkip);
     }),
   onProxyChanged: (cb) =>
     on('proxy-changed', (_evt, proxy) => {

@@ -1,3 +1,11 @@
+// 抑制广告拦截导致的 ERR_BLOCKED_BY_CLIENT 控制台刷屏（广告被拦截是预期行为）
+const origEmitWarning = process.emitWarning;
+process.emitWarning = (warning, typeOrOpts, ...args) => {
+  const msg = typeof warning === 'string' ? warning : warning?.message || '';
+  if (msg.includes('ERR_BLOCKED_BY_CLIENT') || msg.includes('Failed to load URL')) return;
+  return origEmitWarning.call(process, warning, typeOrOpts, ...args);
+};
+
 import { app, BrowserView, BrowserWindow, ipcMain } from 'electron';
 import path from 'node:path';
 import Store from 'electron-store';
@@ -16,26 +24,17 @@ const store = new Store({
     activeTabId: '1',
     scripts: [],
     permissions: {}, // host -> { alwaysAllow: boolean }
-    adblock: {
-      enabled: false  // 默认关，避免 ERR_BLOCKED_BY_CLIENT；用 HideAds 隐藏广告
-    },
-    cosmetic: {
-      enabled: false,
-      css: ''
-    },
-    autoSkipAds: {
-      enabled: true
-    },
-    proxy: {
-      enabled: false,
-      url: '' // e.g. socks5://127.0.0.1:1080 or http://proxy:8080
-    },
+    adblock: { enabled: false },
+    cosmetic: { enabled: false, css: '' },
+    autoSkipAds: { enabled: false },
+    videoAdSkip: { enabled: false },
+    proxy: { enabled: false, url: '' },
     privacy: {
-      blockPopups: true,
-      blockNotifications: true,
-      doNotTrack: true,
-      stripReferer: true,
-      blockThirdPartyCookies: true
+      blockPopups: false,
+      blockNotifications: false,
+      doNotTrack: false,
+      stripReferer: false,
+      blockThirdPartyCookies: false
     }
   }
 });
@@ -103,7 +102,7 @@ function setPermissions(next) {
 }
 
 function getAdblock() {
-  return store.get('adblock') || { enabled: true };
+  return store.get('adblock') || { enabled: false };
 }
 
 function setAdblock(next) {
@@ -119,21 +118,29 @@ function setCosmetic(next) {
 }
 
 function getAutoSkipAds() {
-  return store.get('autoSkipAds') || { enabled: true };
+  return store.get('autoSkipAds') || { enabled: false };
 }
 
 function setAutoSkipAds(next) {
   store.set('autoSkipAds', next);
 }
 
+function getVideoAdSkip() {
+  return store.get('videoAdSkip') || { enabled: false };
+}
+
+function setVideoAdSkip(next) {
+  store.set('videoAdSkip', next);
+}
+
 function getPrivacy() {
   return (
     store.get('privacy') || {
-      blockPopups: true,
-      blockNotifications: true,
-      doNotTrack: true,
-      stripReferer: true,
-      blockThirdPartyCookies: true
+      blockPopups: false,
+      blockNotifications: false,
+      doNotTrack: false,
+      stripReferer: false,
+      blockThirdPartyCookies: false
     }
   );
 }
@@ -274,6 +281,86 @@ function autoSkipAdsScript() {
 `;
 }
 
+function videoAdSkipScript() {
+  return `
+(() => {
+  if (window.__browser_is_video_ad_skip_installed) return;
+  window.__browser_is_video_ad_skip_installed = true;
+
+  const VIDEO_SKIP_SELECTORS = [
+    '.ytp-ad-skip-button',
+    '.ytp-ad-skip-button-modern',
+    '.ytp-ad-skip-button-container button',
+    '[class*="ytp-ad-skip" i]',
+    '.adSkipButton',
+    '.vjs-skip-button',
+    '[class*="skip" i][class*="ad" i]',
+    '[aria-label*="Skip" i]',
+    '[aria-label*="跳过" i]',
+    'button[class*="skip" i]',
+    '.ad-showing .ytp-ad-skip-button-modern'
+  ];
+
+  const VIDEO_AD_OVERLAY_SELECTORS = [
+    '.ytp-ad-overlay-container',
+    '.ytp-ad-overlay-close-button',
+    '.ytp-ad-skip-overlay',
+    '.ytp-ad-text-overlay',
+    '.ytp-ad-image-overlay',
+    '[class*="ytp-ad" i][class*="overlay" i]',
+    '.ad-showing .ytp-ad-player-overlay',
+    '.vjs-ad-overlay',
+    '[class*="ad" i][class*="overlay" i][class*="video" i]',
+    '.ad-container',
+    '.video-ads'
+  ];
+
+  const isVisible = (el) => {
+    if (!el || !el.getBoundingClientRect) return false;
+    const r = el.getBoundingClientRect();
+    if (r.width < 2 || r.height < 2) return false;
+    const s = getComputedStyle(el);
+    return s.visibility !== 'hidden' && s.display !== 'none' && s.opacity !== '0';
+  };
+
+  const tryClick = (el) => {
+    if (!el || !isVisible(el)) return false;
+    try { el.click(); return true; } catch { return false; }
+  };
+
+  const skipVideoAds = () => {
+    for (const sel of VIDEO_SKIP_SELECTORS) {
+      try {
+        const nodes = document.querySelectorAll(sel);
+        for (const el of nodes) {
+          if (tryClick(el)) return true;
+        }
+      } catch {}
+    }
+    return false;
+  };
+
+  const hideVideoAdOverlays = () => {
+    for (const sel of VIDEO_AD_OVERLAY_SELECTORS) {
+      try {
+        document.querySelectorAll(sel).forEach((el) => {
+          if (isVisible(el)) el.style.setProperty('display', 'none', 'important');
+        });
+      } catch {}
+    }
+  };
+
+  const run = () => {
+    if (!skipVideoAds()) hideVideoAdOverlays();
+  };
+
+  run();
+  new MutationObserver(run).observe(document.documentElement, { childList: true, subtree: true, attributes: true });
+  setInterval(run, 500);
+})();
+`;
+}
+
 function createWindow() {
   const win = new BrowserWindow({
     width: 1200,
@@ -289,7 +376,6 @@ function createWindow() {
 
   if (isDev) {
     win.loadURL('http://localhost:5173');
-    win.webContents.openDevTools({ mode: 'detach' });
   } else {
     win.loadFile(path.join(app.getAppPath(), 'dist', 'index.html'));
   }
@@ -426,6 +512,16 @@ function createWindow() {
     }
   }
 
+  async function applyVideoAdSkipOnce() {
+    const cfg = getVideoAdSkip();
+    if (!cfg.enabled) return;
+    try {
+      await view.webContents.executeJavaScript(videoAdSkipScript(), true);
+    } catch {
+      // ignore
+    }
+  }
+
   let browserViewHidden = false;
   const TOOLBAR_H = 56;
   const TABBAR_H = 36;
@@ -532,14 +628,15 @@ function createWindow() {
 
   view.webContents.on('dom-ready', async () => {
     await applyCosmeticOnce();
-    // Enable only when ad filtering is on (network or cosmetic), to reduce surprises.
     if (getAdblock().enabled || getCosmetic().enabled) {
       await applyAutoSkipAdsOnce();
     }
+    await applyVideoAdSkipOnce();
     await maybeRunScriptsFor('dom-ready');
   });
 
   view.webContents.on('did-finish-load', async () => {
+    await applyVideoAdSkipOnce();
     await maybeRunScriptsFor('did-finish-load');
   });
 
@@ -585,12 +682,20 @@ function createWindow() {
   });
 
   ipcMain.handle('navigate', async (_evt, url) => {
-    await view.webContents.loadURL(url);
-    return true;
+    try {
+      await view.webContents.loadURL(url);
+      return true;
+    } catch (err) {
+      // ERR_ABORTED 等导航中断时忽略，避免控制台报错
+      if (err?.errno !== -3 && err?.code !== 'ERR_ABORTED') throw err;
+      return false;
+    }
   });
 
   ipcMain.handle('goBack', () => {
-    if (view.webContents.canGoBack()) view.webContents.goBack();
+    if (view.webContents.navigationHistory.canGoBack()) {
+      view.webContents.navigationHistory.goBack();
+    }
   });
 
   ipcMain.handle('reload', () => {
@@ -606,6 +711,7 @@ function createWindow() {
     adblock: getAdblock(),
     cosmetic: getCosmetic(),
     autoSkipAds: getAutoSkipAds(),
+    videoAdSkip: getVideoAdSkip(),
     proxy: getProxy(),
     privacy: getPrivacy()
   }));
@@ -683,11 +789,18 @@ function createWindow() {
     const next = { ...getAutoSkipAds(), enabled: !!enabled };
     setAutoSkipAds(next);
     win.webContents.send('autoskip-changed', getAutoSkipAds());
-    // Apply immediately (best-effort).
     if (next.enabled && (getAdblock().enabled || getCosmetic().enabled)) {
       await applyAutoSkipAdsOnce();
     }
     return getAutoSkipAds();
+  });
+
+  ipcMain.handle('setVideoAdSkipEnabled', async (_evt, enabled) => {
+    const next = { ...getVideoAdSkip(), enabled: !!enabled };
+    setVideoAdSkip(next);
+    win.webContents.send('video-ad-skip-changed', getVideoAdSkip());
+    if (next.enabled) await applyVideoAdSkipOnce();
+    return getVideoAdSkip();
   });
 
   ipcMain.handle('setBrowserViewHidden', (_evt, hidden) => {

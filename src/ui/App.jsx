@@ -23,16 +23,17 @@ export default function App() {
   const [activeTabId, setActiveTabId] = useState('');
   const [scripts, setScripts] = useState([]);
   const [perm, setPerm] = useState({}); // host -> { alwaysAllow: boolean }
-  const [adblock, setAdblock] = useState({ enabled: true });
-  const [cosmetic, setCosmetic] = useState({ enabled: true, css: '' });
-  const [autoskip, setAutoskip] = useState({ enabled: true });
+  const [adblock, setAdblock] = useState({ enabled: false });
+  const [cosmetic, setCosmetic] = useState({ enabled: false, css: '' });
+  const [autoskip, setAutoskip] = useState({ enabled: false });
+  const [videoAdSkip, setVideoAdSkip] = useState({ enabled: false });
   const [proxy, setProxyState] = useState({ enabled: false, url: '' });
   const [privacy, setPrivacy] = useState({
-    blockPopups: true,
-    blockNotifications: true,
-    doNotTrack: true,
-    stripReferer: true,
-    blockThirdPartyCookies: true
+    blockPopups: false,
+    blockNotifications: false,
+    doNotTrack: false,
+    stripReferer: false,
+    blockThirdPartyCookies: false
   });
   const [privacyOpen, setPrivacyOpen] = useState(false);
 
@@ -63,7 +64,7 @@ export default function App() {
     const api = window.browserIsApi;
     if (!api) return;
 
-    api.getState().then(({ lastUrl, tabs: t, activeTabId: aid, scripts: s, permissions, privacy: p, cosmetic: c, autoSkipAds: a, proxy: px }) => {
+    api.getState().then(({ lastUrl, tabs: t, activeTabId: aid, scripts: s, permissions, privacy: p, cosmetic: c, autoSkipAds: a, videoAdSkip: v, proxy: px }) => {
       if (t?.length) setTabs(t);
       if (aid) setActiveTabId(aid);
       setScripts(s);
@@ -71,6 +72,7 @@ export default function App() {
       if (p) setPrivacy(p);
       if (c) setCosmetic(c);
       if (a) setAutoskip(a);
+      if (v) setVideoAdSkip(v);
       if (px) setProxyState(px);
       if (lastUrl) {
         setCurrentUrl(lastUrl);
@@ -90,6 +92,7 @@ export default function App() {
     const off2b = api.onAdblockChanged((a) => setAdblock(a));
     const off2bb = api.onCosmeticChanged((c) => setCosmetic(c));
     const off2bbb = api.onAutoSkipAdsChanged((a) => setAutoskip(a));
+    const off2bbbb = api.onVideoAdSkipChanged((v) => setVideoAdSkip(v));
     const off2px = api.onProxyChanged((px) => setProxyState(px));
     const off2c = api.onPrivacyChanged((p) => setPrivacy(p));
     const off3 = api.onScriptRunRequest(({ requestId, url, host: h, matchedScripts }) => {
@@ -105,6 +108,7 @@ export default function App() {
       off2b?.();
       off2bb?.();
       off2bbb?.();
+      off2bbbb?.();
       off2px?.();
       off2c?.();
       off3?.();
@@ -183,6 +187,17 @@ export default function App() {
           title="隐藏广告容器（CSS 注入）"
         >
           HideAds: {cosmetic?.enabled ? '开' : '关'}
+        </button>
+        <button
+          className={`btn ${videoAdSkip?.enabled ? 'primary' : ''}`}
+          onClick={async () => {
+            const next = !videoAdSkip?.enabled;
+            setVideoAdSkip({ enabled: next });
+            await window.browserIsApi?.setVideoAdSkipEnabled(next);
+          }}
+          title="视频广告跳过 / 播放器内广告拦截"
+        >
+          VideoSkip: {videoAdSkip?.enabled ? '开' : '关'}
         </button>
         <button className="btn" onClick={() => setScriptModalOpen(true)}>
           脚本
@@ -430,6 +445,19 @@ export default function App() {
                   }}
                 />
                 自动点击“跳过广告/关闭广告”（仅在 AdBlock/HideAds 开启时生效）
+              </label>
+
+              <label className="toggle" style={{ display: 'flex', padding: '8px 0' }}>
+                <input
+                  type="checkbox"
+                  checked={!!videoAdSkip?.enabled}
+                  onChange={async (e) => {
+                    const next = e.target.checked;
+                    setVideoAdSkip({ enabled: next });
+                    await window.browserIsApi?.setVideoAdSkipEnabled(next);
+                  }}
+                />
+                视频广告跳过：自动点击播放器内“跳过广告”并隐藏广告遮罩（YouTube 等）
               </label>
 
               <div style={{ height: 12 }} />
